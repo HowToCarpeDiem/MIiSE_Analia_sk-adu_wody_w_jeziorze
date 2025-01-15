@@ -1,0 +1,1086 @@
+---
+title: "Projekt Jezioro"
+author: "Kamil Burza, Kornel Korbas"
+format:
+  html:
+    theme: cosmo
+editor: visual
+---
+
+## 1. Bibilioteki
+
+**Poniżej biblioteki z których korzystaliśmy, wraz z opisami:**
+
+```{r setup, include=FALSE}}
+library(hrbrthemes) # Do ggplot2
+library(gtools)
+library(tidyverse)
+library(gridExtra)
+library(corrplot)
+library(forecast) # Do predykcji?
+library(e1071) # Test kurtozy
+library(dgof) # Test Kołomogorowa
+library(combinat) # ?
+library(outliers) # Test grubbsona
+library(EnvStats) # Test rosnera
+library(nortest) # Test Andersena-Darlinga oraz Lillieforsa
+library(caret)
+library(mboost)
+library(car)
+library(MASS)
+library(rpart)
+library(rpart.plot)
+library(leaps) #subs
+library(hydroGOF)
+library(lavaan) # Eksploracja zmiennych przyczynowych (Causal Analysis)
+library(brms) # Model bayesowski
+library(bayesplot)
+library(reshape2)
+library(plotrix)
+library(glmnet)
+library(mgcv)
+library(pdp)
+library(randomForest)
+```
+
+## 2. Dane
+
+### 2.1 Wczytanie danych i usunięcie pustych wierszy
+
+```{r setup, include=FALSE}}
+dane2 <- read_csv("d.csv")
+dane <- na.omit(dane2)
+```
+
+### 2.2 Przedstawienie danych
+
+```{r}
+head(dane, n = 5)
+```
+
+### 2.3 Opis danych
+
+#### Dane dostarczają informacji na temat składu wody w jeziorze.
+
+-   **chla** -- Stężenie chlorofilu-a, które wskazuje na poziom fitoplanktonu i może być używane do monitorowania eutrofizacji (nadmiaru składników odżywczych w wodzie).\
+-   **temp** -- Temperatura wody, ważna dla analizy warunków środowiskowych wpływających na organizmy wodne.\
+-   **bar** -- Ciśnienie barometryczne, które może być uwzględniane w kontekście warunków atmosferycznych wpływających na wodę.\
+-   **nas** -- Przewodność (lub inny parametr związany z zasoleniem), wskazująca na stężenie rozpuszczonych jonów w wodzie.\
+-   **przew** -- Przewodność właściwa (elektryczna), informująca o mineralizacji wody.\
+-   **ph** -- Odczyn wody, kluczowy dla oceny kwasowości/zasadowości i zdrowia ekosystemu wodnego.\
+-   **namon** -- Stężenie amoniaku, które może być wskaźnikiem zanieczyszczenia organicznego lub procesu dekompozycji.
+
+### 2.4 Statystyki opisowe
+
+```{r}
+summary(dane)
+```
+
+## 3. Wykresy
+
+### 3.1 Macierz wykresów podpunktowych
+
+```{r}
+# WYKRES
+plot(dane[,1:7] , pch=20 , cex=1.5 , col="#69b3a2")
+```
+
+Temperatura i przewodność wydają się być skorelowane, co jest zgodne z fizykochemicznymi właściwościami wody. Stężenie amoniaku może być powiązane z pH, co ma znaczenie dla oceny toksyczności amoniaku w wodzie.
+
+### 3.2 Histogramy
+
+```{r}
+# HISTOGRAMY
+plots <- list()
+
+for (i in 1:7) {
+  column_name <- colnames(dane)[i]
+  
+  plot <- ggplot(dane, aes_string(x = column_name)) +
+    geom_histogram(bins = 30, fill = "blue", color = "black", alpha = 0.7) +
+    labs(title = paste("Histogram for", column_name))
+  
+  plots[[i]] <- plot
+}
+# Wyświetlamy wszystkie wykresy w układzie 2x4 (lub innym w zależności od liczby wykresów)
+grid.arrange(grobs = plots, ncol = 4) 
+```
+
+#### Analiza histogramów zmiennych związanych z jakością wody
+
+-   **Chlorofil-a (chla):**\
+    Rozkład jest skośny w prawo, z dużą liczbą mniejszych wartości stężenia chlorofilu-a. Wysokie stężenia są rzadkością. Może to sugerować, że większość próbek pochodzi z jeziora o umiarkowanym lub niskim poziomie eutrofizacji, a epizody wyższego stężenia chlorofilu są sporadyczne.
+
+-   **Temperatura wody (temp):**\
+    Dane dotyczące temperatury wody są rozłożone dość równomiernie w zakresie od około 10°C do 20°C, z nieco większą koncentracją obserwacji w przedziale 14-18°C. Wskazuje to na pomiary przeprowadzane w umiarkowanych temperaturach, typowych dla sezonu letniego lub przejściowego.
+
+-   **Ciśnienie barometryczne (bar):**\
+    Histogram pokazuje dużą koncentrację pomiarów wokół jednej wartości (\~20). Sugeruje to, że ciśnienie było względnie stałe w trakcie pomiarów, co może oznaczać ograniczoną zmienność warunków atmosferycznych.
+
+-   **Przewodność (nas):**\
+    Rozkład jest bliski normalnemu z lekkim przesunięciem. Najwięcej próbek znajduje się w przedziale 80-120 µS/cm, co wskazuje na typowe zasolenie dla badanego jeziora.
+
+-   **Przewodność właściwa (przew):**\
+    Histogram wskazuje na bimodalny rozkład, co może oznaczać dwa różne stany wody lub różne typy próbek. Największe zagęszczenie występuje w okolicach 200 i 300 µS/cm.
+
+-   **pH:**\
+    Rozkład pH pokazuje, że większość wartości mieści się między 7,5 a 9, co jest zgodne z typowymi zakresami pH dla jezior słodkowodnych o umiarkowanej zasadowości.
+
+-   **Stężenie amoniaku (namon):**\
+    Histogram jest wyraźnie skośny w prawo z dominującymi bardzo małymi wartościami amoniaku. Wysokie stężenia występują rzadko, co sugeruje, że większość pomiarów dotyczy wody o niskim poziomie zanieczyszczenia związkami amonowymi.
+
+### 3.3 Wykresy korelacji Pearsona i Spearmana z wnioskami
+
+```{r}
+Mdane = cor(dane, method = "pearson")
+corrplot(Mdane)
+```
+
+```{r}
+Mdane_sp = cor(dane, method = "spearman")
+corrplot(Mdane)
+```
+
+-   **Chlorofil-a (chla):** Współczynnik korelacji Pearsona wskazuje na umiarkowaną dodatnią korelację z temperaturą (temp) oraz przewodnością (przew). Silna dodatnia korelacja występuje z wartościami ciśnienia barometrycznego (bar). Korelacja Spearmana potwierdza te zależności, choć wykazuje nieco silniejsze powiązania. Może to sugerować, że wyższe poziomy chlorofilu-a są związane z cieplejszą wodą i wyższym ciśnieniem.
+
+-   **Temperatura wody (temp):** Wykazuje pozytywną korelację z chlorofilem-a (chla) oraz przewodnością (przew). Korelacja Spearmana jest podobna, co wskazuje na stabilne relacje między tymi zmiennymi. Może to świadczyć o tym, że podwyższenie temperatury sprzyja rozwojowi fitoplanktonu.
+
+-   **Ciśnienie barometryczne (bar):** Wysoka dodatnia korelacja z chlorofilem-a (chla). Wskazuje to, że wzrost ciśnienia atmosferycznego może być związany z wyższymi stężeniami chlorofilu-a.
+
+-   **Przewodność (nas):** Korelacja jest silna z przewodnością właściwą (przew), co jest spodziewanym wynikiem ze względu na związki fizyczne tych parametrów.
+
+-   **Przewodność właściwa (przew):** Dodatnia korelacja z temperaturą oraz chlorofilem-a wskazuje na powiązanie z jakością wody i jej właściwościami chemicznymi. Może to wynikać z obecności składników odżywczych sprzyjających rozwojowi fitoplanktonu.
+
+-   **pH:** Korelacje z innymi zmiennymi są stosunkowo słabe lub umiarkowane, ale widoczna jest umiarkowana ujemna korelacja z chlorofilem-a, co może wskazywać na wpływ kwasowości na rozwój fitoplanktonu.
+
+-   **Stężenie amoniaku (namon):** Korelacje są generalnie słabe, ale dodatnia korelacja z przewodnością (przew) może sugerować związki z jakością wody, choć nie są one silne.
+
+### 3.4 Wykres autokorelacji
+
+```{r}
+# AUTOKORELACJA
+acf(dane[,1:7], lag = 8)
+```
+
+-   **Chlorofil-a (chla):** Brak istotnej autokorelacji dla lagów większych niż 0, co sugeruje, że zmienność chlorofilu-a w próbkach nie wykazuje wyraźnych wzorców czasowych lub powtarzających się trendów.
+
+-   **Temperatura wody (temp):** Nie zaobserwowano istotnej autokorelacji dla wyższych lagów, co wskazuje na brak silnej sezonowej zależności w badanym okresie.
+
+-   **Ciśnienie barometryczne (bar):** Niski poziom autokorelacji sugeruje stabilność warunków atmosferycznych i brak długoterminowych cyklicznych zmian.
+
+-   **Przewodność (nas):** Autokorelacja jest niewielka dla wszystkich lagów, co oznacza brak wyraźnych cyklicznych wzorców.
+
+-   **Przewodność właściwa (przew):** Podobnie jak dla przewodności, autokorelacja nie wskazuje na istotne zależności czasowe.
+
+-   **pH:** Brak znaczącej autokorelacji oznacza, że poziomy pH w czasie są losowe lub niepowiązane w długoterminowych trendach.
+
+-   **Stężenie amoniaku (namon):** Brak istotnej autokorelacji sugeruje, że zmienność poziomów amoniaku jest przypadkowa i nie zależy od wcześniejszych wartości pomiarowych.
+
+Wnioski te wskazują, że dane nie wykazują silnych cyklicznych wzorców ani trendów czasowych, co jest typowe dla krótkookresowych pomiarów bez wyraźnego wpływu sezonowości.
+
+### 4. Obliczanie ITS
+
+```{r}
+# ITS
+dane$ITS <- dane$ph + 0.013 * (100-dane$nas) 
+its_values <- sort(dane$ITS)
+its_values
+```
+
+```{r}
+dane
+```
+
+## 5. Testy normalności
+
+### 5.1 Test Shapiro
+
+```{r}
+# TEST SHAPIRO
+wyniki_shapiro <- data.frame(Column_Name = character(0), Shapiro_p_value = numeric(0))
+for (i in 1:8) {
+  column_name <- colnames(dane)[i]
+  test_shapiro <- shapiro.test(dane[[column_name]]) 
+  
+  wyniki_shapiro <- rbind(wyniki_shapiro, data.frame(Column_Name = column_name, Shapiro_p_value = test_shapiro$p.value))
+}
+wyniki_shapiro
+```
+
+### 5.2 Test Kurtozy
+
+```{r}
+# TEST KUROZY
+wyniki_kurtoza <- data.frame(Column_Name = character(0), Kurtosis_value = numeric(0))
+for (i in 1:8) {
+  column_name <- colnames(dane)[i]  # Nazwa kolumny
+  
+  test_kurtozy <- kurtosis(dane[[column_name]])  # Obliczenie kurtozy
+  
+  wyniki_kurtoza <- rbind(wyniki_kurtoza, data.frame(Column_Name = column_name, Kurtosis_value = test_kurtozy))  # Dodanie wyniku
+}
+wyniki_kurtoza
+```
+
+### 5.3 Test Kołmogorowa
+
+```{r}
+wyniki_kolmogorow <- data.frame(Column_Name = character(0), Kolo_p_value = numeric(0))
+for (i in 1:8) {
+  column_name <- colnames(dane)[i]
+
+  col_mean <- mean(dane[[column_name]], na.rm = TRUE)
+  col_sd <- sd(dane[[column_name]], na.rm = TRUE)
+  
+  test_kolo <- ks.test(dane[[column_name]], "pnorm", mean = col_mean, sd = col_sd)
+  
+  wyniki_kolmogorow <- rbind(wyniki_kolmogorow, data.frame(Column_Name = column_name, Kolo_p_value = test_kolo$p.value))
+}
+wyniki_kolmogorow
+```
+
+### 5.4 Test Andersena-Darlinga
+
+```{r}
+wyniki_anderson <- data.frame(Column_Name = character(0), AD_p_value = numeric(0))
+for (i in 1:8) {
+  column_name <- colnames(dane)[i]
+
+  col_mean <- mean(dane[[column_name]], na.rm = TRUE)
+  col_sd <- sd(dane[[column_name]], na.rm = TRUE)
+  
+  standardized_data <- (dane[[column_name]] - col_mean) / col_sd
+  
+  test_ad <- ad.test(standardized_data)
+  
+  wyniki_anderson <- rbind(wyniki_anderson, data.frame(Column_Name = column_name, AD_p_value = test_ad$p.value))
+}
+wyniki_anderson
+```
+
+### 5.5 Test Lillieforsa
+
+```{r}
+wyniki_lilliefors <- data.frame(Column_Name = character(0), Lillie_p_value = numeric(0))
+
+for (i in 1:8) {
+  column_name <- colnames(dane)[i]
+
+  test_lillie <- lillie.test(dane[[column_name]])
+
+  wyniki_lilliefors <- rbind(wyniki_lilliefors, data.frame(Column_Name = column_name, Lillie_p_value = test_lillie$p.value))
+}
+
+wyniki_lilliefors
+```
+
+### 5.6 Wspólne wnioski z testów normalności dla zmiennych
+
+1.  **Ogólna zgodność wyników**\
+    Wyniki różnych testów normalności (Shapiro-Wilka, Kołmogorowa-Smirnowa, Andersona-Darlinga i Lilleforsa) wykazują podobne tendencje, chociaż ich dokładność różni się w zależności od próbki i czułości testu na różne aspekty rozkładu danych.
+
+2.  **Zmienna o rozkładzie najbliższym normalnemu**
+
+    -   Zmienna **temp** wykazuje spójne wysokie wartości p we wszystkich testach, co wskazuje, że może być zgodna z rozkładem normalnym.
+
+    -   Podobnie zmienne **ph**, **nas**, i **ITS** mają w większości testów wysokie p-value, co sugeruje zgodność z normalnością lub niewielkie odstępstwa.
+
+3.  **Zmienna z największymi odstępstwami od normalności**
+
+    -   Zmienna **przew** jest konsekwentnie wskazywana jako **niezgodna z rozkładem normalnym** przez wszystkie testy, z wyjątkowo niskimi wartościami p.
+
+    -   Podobne odstępstwa dotyczą zmiennych **chla**, **bar**, i **namon**, które również regularnie wykazują **statystycznie istotne różnice względem normalności**.
+
+4.  **Kurtoza**
+
+    -   Zmienna **przew** ma bardzo wysoką wartość kurtozy (8.24), co wskazuje na obecność dużej liczby ekstremalnych wartości.
+
+    -   Wysoka kurtoza zmiennej **chla** również potwierdza odstępstwa od normalności.
+
+5.  **Uwagi o spójności między testami**
+
+    -   Testy Shapiro-Wilka, Andersona-Darlinga i Lilleforsa są bardziej czułe na końce rozkładu niż test Kołmogorowa-Smirnowa, co tłumaczy niższe wartości p dla zmiennych z ekstremami w rozkładzie.
+
+    -   Dla zmiennej **ITS**, wartości p sugerują, że jest ona **najbliższa normalności** spośród nowych zmiennych wprowadzonych do analizy, ale nie jest to jednoznaczne we wszystkich testach.
+
+### Podsumowanie i rekomendacje
+
+1.  **Zastosowanie metod parametrycznych** jest uzasadnione jedynie dla zmiennych **temp**, **ph**, **nas**, i **ITS**, które nie odrzuciły hipotezy o normalności rozkładu.
+
+2.  **Zmienna przew** i inne zmienne odbiegające od normalności (szczególnie **chla**, **bar**, i **namon**) wymagają stosowania **metod nieparametrycznych** w dalszej analizie.
+
+3.  Przy interpretacji wyników analizy dla zmiennych o wysoce nienormalnych rozkładach należy brać pod uwagę wpływ wartości skrajnych, zwłaszcza w przypadku zmiennej **przew**.
+
+## 6. Testy odstające
+
+### 6.1 Grubbs
+
+```{r}
+# Dla 2 najwyższych
+grubbs.test(its_values)
+grubbs.test(its_values[1:50])
+
+# Dla 2 najniższych
+grubbs.test(its_values, opposite = TRUE)
+grubbs.test(its_values[2:51], opposite = TRUE)
+						
+```
+
+### 6.2 Dixon
+
+```{r}
+# Dla 2 najwyższych
+dixon.test(its_values[22:51])
+dixon.test(its_values[22:50])
+
+# Dla 2 najniższych
+dixon.test(its_values[1:30])
+dixon.test(its_values[2:30], opposite = TRUE)
+```
+
+### 6.3 Rosner
+
+```{r}
+# Dla 2 najwyższych
+rosnerTest(its_values, k = 2)
+
+# Dla 2 najniższych
+rosnerTest(its_values[1:30], k = 1)
+rosnerTest(its_values[2:10], k = 1)
+```
+
+### 6.4 Wnioski z testów Grubbsa, Dixona i Rosnera dla wartości ITS
+
+1.  **Brak istotnych wartości odstających**\
+    Wszystkie testy (Grubbsa, Dixona i Rosnera) wskazują brak statystycznie istotnych wartości odstających w zestawie danych ITS, niezależnie od próbkowania (pełny zbiór danych lub jego podzbiory). Wszystkie wartości p są większe niż typowy poziom istotności 0,05, co oznacza, że nie ma podstaw do odrzucenia hipotezy zerowej o braku odstających obserwacji. W takim wypadku również nie bierzemy pod uwagę hipotezy alternatywnej, wg której 2 największe i 2 najmniejsze wartości są odstające.
+
+2.  **Różnice w testach**
+
+    -   **Test Grubbsa** sprawdza pojedyncze najniższe lub najwyższe wartości jako potencjalne outliery. We wszystkich przypadkach wartość p wynosi 1, co jednoznacznie wskazuje brak wartości odstających.
+
+    -   **Test Dixona** również nie wykazuje obecności wartości odstających, choć jego wartości p są niższe niż w teście Grubbsa, ale nadal nieosiągające poziomu istotności.
+
+    -   **Test Rosnera** dla różnych prób ITS potwierdza brak odchyleń od rozkładu normalnego, wskazując, że nie znaleziono żadnych odstających punktów przy założonym poziomie istotności (5%).
+
+3.  **Wynik globalny dla danych ITS**\
+    Dane ITS są wolne od wartości odstających, co sugeruje, że rozkład danych jest stabilny i nie wymaga specjalnego traktowania wartości skrajnych w dalszej analizie statystycznej.
+
+### Rekomendacje
+
+-   **Brak konieczności usuwania obserwacji**: Wszystkie dane mogą być bezpiecznie używane w analizach bez potrzeby eliminacji punktów jako wartości odstające.
+
+-   **Zastosowanie metod parametrycznych** dla ITS może być odpowiednie, jeżeli dodatkowe testy potwierdzą normalność rozkładu (zgodnie z wcześniejszymi analizami normalności).
+
+## 7. Regresja liniowa
+
+### 7.1 Model regresji liniowej
+
+```{r}
+lm_model <- lm(ITS ~ nas + ph + przew + namon + temp + bar, data = dane)
+lm_model
+```
+
+**Wnioski:** Największy wpływ zmiennej pH Współczynnik dla zmiennej ph wynosi dokładnie 1.000, co sugeruje, że zmiana wartości pH o 1 jednostkę powoduje proporcjonalną zmianę wartości ITS o 1 jednostkę. Zmienna ta ma więc największy wpływ na wartość ITS w modelu.
+
+**Negatywny wpływ zmiennej nas** Zmienna nas ma ujemny współczynnik -0.013, co oznacza, że zwiększenie nas o 1 jednostkę prowadzi do spadku ITS o 0.013 jednostki, zgodnie z formułą definicji ITS, w której nas jest odejmowane.
+
+**Minimalny wpływ innych zmiennych** Współczynniki dla pozostałych zmiennych (przew, namon, temp, bar) są bardzo bliskie zera i ich wpływ na zmienną zależną ITS można uznać za znikomy lub statystycznie nieistotny. Mogą one być niepotrzebne w modelu, jeśli analiza statystyczna potwierdzi brak istotności.
+
+**Stała (intercept)** Wartość stałej wynosi 1.300, co oznacza, że gdy wszystkie zmienne niezależne mają wartość zero, ITS wynosi 1.300. Jednak fizyczna interpretacja tej wartości w kontekście rzeczywistych danych może być ograniczona, w zależności od zakresu zmiennych.
+
+### Co można dodać?
+
+Rekomendacje: Test istotności współczynników Konieczne jest przeprowadzenie testów istotności współczynników, aby ocenić, które z nich rzeczywiście wnoszą znaczącą informację do modelu.
+
+Ewentualne uproszczenie modelu Z uwagi na znikomy wpływ zmiennych przew, namon, temp i bar, można rozważyć ich usunięcie i zbudowanie prostszego modelu liniowego. Jednak decyzja ta wymaga weryfikacji na podstawie testów istotności i kryteriów dopasowania modelu (np. AIC, BIC).
+
+Sprawdzenie założeń modelu Przed dalszą interpretacją modelu należy sprawdzić, czy spełnia on założenia analizy regresji (normalność reszt, homoskedastyczność, brak współliniowości itp.).
+
+### 7.2 Statystyki modelu
+
+```{r}
+summary(lm_model)
+```
+
+## 7.3 Wyniki testu współliniowości (VIF):\*\*
+
+```{r}
+vif(lm_model)
+```
+
+**Brak krytycznej współliniowości:**
+
+Typowo wartość VIF \> 10 sugeruje poważne problemy współliniowości. W tym przypadku wszystkie zmienne mają wartości VIF znacznie poniżej 10, co wskazuje, że problem współliniowości jest niewielki lub nie istnieje w tym modelu. Największe wartości VIF dla zmiennych ph i nas:
+
+Zmienne ph (4.34) i nas (4.29) mają najwyższe wartości VIF, co może sugerować pewną zależność między nimi a innymi zmiennymi predyktorowymi. Nie jest to jednak na tyle poważne, aby wymagać natychmiastowego usunięcia tych zmiennych. Idealne dopasowanie i inne możliwe przyczyny:
+
+Pomimo niskich wartości VIF, ostrzeżenie o idealnym dopasowaniu wskazuje, że może istnieć problem z konstrukcją modelu. Jest możliwe, że związek zmiennej zależnej ITS z predyktorami został sztucznie wyrażony w danych (np. przez formułę obliczenia ITS jako funkcji ph i nas), co prowadzi do braku resztowej wariancji.
+
+### 7.4 Wykresy reszt
+
+```{r}
+par(mfrow = c(2, 2))
+plot(lm_model)
+```
+
+### 7.5 Interpretacja wykresów diagnostycznych:
+
+#### Residuals vs Fitted
+
+-   **Cel:** Sprawdzenie liniowości i jednorodności wariancji.
+
+-   **Interpretacja:** Reszty powinny być losowo rozproszone wokół poziomu 0. Brak wzorca wskazuje, że założenie liniowości i homoskedastyczności (stałej wariancji) jest spełnione. Na podstawie Twojego wykresu, rozproszenie reszt wygląda na dość równomierne, co jest pozytywnym znakiem.
+
+#### Q-Q Plot (Quantile-Quantile Plot)
+
+-   **Cel**: Sprawdzenie normalności rozkładu reszt.
+
+-   **Interpretacja:** Punkty powinny leżeć blisko linii prostej. Odchylenia na końcach mogą wskazywać na problemy z normalnością. W Twoim wykresie reszty są zbliżone do linii, co sugeruje, że normalność jest w przybliżeniu spełniona.
+
+#### Scale-Location
+
+-   **Cel:** Sprawdzenie jednorodności wariancji.
+
+-   **Interpretacja:** Punkty powinny być losowo rozproszone wokół poziomej linii. Twoje wykresy pokazują równomierne rozproszenie, co sugeruje, że wariancja reszt jest dość jednorodna.
+
+#### Residuals vs Leverage
+
+-   **Cel:** Identyfikacja punktów o wysokiej dźwigni lub dużym wpływie.
+
+-   **Interpretacja:** Sprawdzamy, czy są jakieś punkty o dużym wpływie na model (wskazane przez Cook's distance). Jeśli są, mogą mieć zbyt duży wpływ na model. W Twoim przypadku nie ma znaczących odstających punktów, co sugeruje brak problematycznych obserwacji.
+
+## 8. Przykładowa predykcja z wykorzystaniem naszego modelu regresji
+
+### 8.1 Stworzenie próbnych danych
+
+```{r}
+new_data <- data.frame(nas = c(50, 60),  ph = c(7.0, 7.5),  przew = c(300, 400),  namon = c(0.5, 0.8),  temp = c(15, 20),  bar = c(1010, 1020))
+```
+
+### 8.2 Predykcja ITS
+
+```{r}
+predicted_ITS <- predict(lm_model, newdata = new_data)
+predicted_ITS
+```
+
+```{r}
+min(dane$ITS)
+max(dane$ITS)
+mean(dane$ITS)
+sd(dane$ITS)
+```
+
+### Wnioski predykcji:
+
+-   Przewidywane wartości mieszczą się w zakresie rzeczywistych wartości ITS
+-   7.65 jest równe minimalnej wartości zakresu oraz jest poza odchyleniem standardowym
+-   Model dość dobrze przewiduje wartości ITS
+
+## 9. Model regresji wielomianowej
+
+### 9.1 Dodanie numeru wiersza jako zmiennej w ramce danych
+
+```{r}
+dane$row_number <- 1:nrow(dane)
+```
+
+### 9.2 Wykres regresji liniowej dla ITS
+
+```{r}
+ggplot(data = dane, aes(x = row_number, y = ITS)) +
+  geom_point(aes(color = 'Rzeczywiste punkty')) +  # Użycie aes dla kolorów
+  geom_smooth(method = "lm", aes(color = "Regresja liniowa")) +  # Użycie aes dla kolorów
+  scale_color_manual(name = "Legenda", 
+                     values = c("Rzeczywiste punkty" = "blue", "Regresja liniowa" = "red")) +
+  labs(title = "Rzeczywiste vs Przewidywane ITS (Model liniowy)",
+       x = "Numer wiersza",
+       y = "ITS") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+
+```
+
+### 9.3 Dopasowanie modelu wielomianowego drugiego stopnia
+
+```{r}
+model_poly <- lm(ITS ~ poly(row_number, 2), data = dane)
+model_poly
+```
+
+### 9.4 Przewidywanie wartości
+
+```{r}
+dane$predicted_poly <- predict(model_poly, newdata = dane)
+```
+
+### 9.5 Wykres regresji wielomianowej dla ITS
+
+```{r}
+
+
+ggplot(data = dane, aes(x = row_number)) +
+  geom_point(aes(y = ITS, color = "Rzeczywiste punkty")) +  # Rzeczywiste wartości ITS
+  geom_line(aes(y = predicted_poly, color = "regresja wielomianowa")) +  # Linia regresji
+  scale_color_manual(name = "Legenda", 
+                     values = c("Rzeczywiste punkty" = "blue", "regresja wielomianowa" = "red")) +
+  labs(title = "Rzeczywiste vs Przewidywane ITS (Model Wielomianowy)",
+       x = "Numer wiersza",
+       y = "ITS") +
+  theme_minimal() +
+  theme(legend.position = "right")  # Ustawienie pozycji legendy na prawo
+
+```
+
+### 9.6 Model regresji liniowej dla ITS i Chla
+
+```{r}
+#regresja w zależności od zmiennej chla
+ggplot(data = dane, aes(x = chla, y = ITS)) +
+  geom_point(aes(color = 'Rzeczywiste punkty')) +  # Rzeczywiste wartości ITS
+  geom_smooth(method = "lm", aes(color = "Regresja liniowa")) +  # Linia regresji
+  scale_color_manual(name = "Legenda", 
+                     values = c("Rzeczywiste punkty" = "blue", "Regresja liniowa" = "red")) +
+  labs(title = "Zależność ITS od Chla (Model liniowy)",
+       x = "Chla",
+       y = "ITS") +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+### 9.7 Model regresji wielomianowej dla ITS i Chla
+
+#Dopasowanie modelu wielomianowego drugiego stopnia dla zmiennej Chla
+
+```{r}
+model_poly_chla <- lm(ITS ~ poly(chla, 2), data = dane)
+
+#Przewidywanie wartości na podstawie modelu wielomianowego
+dane$predicted_poly_chla <- predict(model_poly_chla, newdata = dane)
+
+#Tworzenie wykresu z legendą
+ggplot(data = dane, aes(x = chla)) +
+  geom_point(aes(y = ITS, color = "Rzeczywiste punkty")) +  # Rzeczywiste wartości ITS
+  geom_line(aes(y = predicted_poly_chla, color = "Regresja wielomianowa")) +  # Linia regresji wielomianowej
+  scale_color_manual(name = "Legenda", 
+                     values = c("Rzeczywiste punkty" = "blue", "Regresja wielomianowa" = "red")) +
+  labs(title = "Zależność ITS od Chla (Model Wielomianowy)",
+       x = "Chla",
+       y = "ITS") +
+  theme_minimal() +
+  theme(legend.position = "right")  # Ustawienie pozycji legendy na prawo
+```
+
+## 10. Optymalizacja modelu dla ITS
+
+### 10.1 Kryterium Informacyjne Akaikego (AIC).
+
+```{r}
+mi2=stepAIC(lm_model)
+```
+
+-   AIC spada (np. z -3505.16 do -3511.4), co wskazuje na poprawę modelu przy redukcji zmiennych.
+-   Przy idealnym dopasowaniu (RSS = 0) znaczenie AIC staje się mniej istotne, ponieważ nie odzwierciedla ono realnej zdolności modelu do generalizacji.
+
+### 10.2 Kombninacje zmiennych
+
+```{r}
+mi3=regsubsets(ITS~.,data=dane[,1:8],nbest=5)
+plot(mi3,scale="r2")
+```
+
+-   Czarne bloki wskazują na obecność danej zmiennej w danym modelu.
+-   Zmienne, takie jak nas i ph pojawiają się w wielu modelach, co sugeruje ich istotny wpływ na zmienną zależną ITS.
+-   Niektóre zmienne (np. chla, temp, bar) są mniej istotne, ponieważ pojawiają się w mniejszej liczbie modeli.
+
+### 10.3 Drzewo decyzyjne
+
+```{r}
+mi4 <- rpart(ITS~.,data=dane[1:8], 
+                 na.action = na.rpart) 
+rpart.plot(mi4, digits = 3)
+```
+
+-   Zmienna ph jest kluczowym czynnikiem wpływającym na wartość ITS.
+-   Wartość ITS wzrasta wraz z wyższymi wartościami ph
+-   Najniższe wartości ITS (7.86) występują dla ph \< 7.85.
+-   Najwyższe wartości ITS (8.84) pojawiają się, gdy ph \>= 8.79
+
+### 10.4 Model caret - rpart
+
+```{r}
+Control_its <- trainControl(method = "cv", number = 10, verboseIter = T)
+
+# Wersja pierwsza pruning późny - rpart
+mi5 <- caret::train(ITS~.,
+                       data=dane[,1:8],
+                       method = "rpart",
+                       metric = 'MAE', # RMSE
+                       trControl = Control_its,
+                       na.action = na.rpart,
+                       tuneLength = 15 # random search, ale po jednym czynniku
+)
+
+# Wyniki:
+mi5
+plot(mi5)
+#CP - parametr złożoności modelu
+#MAE - średni błąd bezwzględny (większy -> model mniej dokładny)
+```
+
+-   Model z parametrem cp = 0 daje najlepsze wyniki, z bardzo niskim błędem MAE i wysokim R², co oznacza, że dobrze odwzorowuje zależności w danych.
+-   Zwiększanie wartości cp prowadzi do zbyt mocnego przycinania drzewa, co powoduje spadek dokładności modelu (zwiększenie MAE, spadek R²)
+-   Od cp ok. 0.72 MAE zaczyna gwałtownie rosnąć
+
+### 10.5 Model caret - bagEarth
+
+```{r}
+Control <- trainControl(method = "cv", number = 10, verboseIter = T)
+mi7 <- caret::train(ITS~.,
+                              data=dane[1:8],
+                              method = "bagEarth",
+                              metric = 'MAE', 
+                              trControl = Control,
+                              na.action = na.omit,
+                              tuneLength = 15
+)
+plot(mi7)
+#terms -  złożoność modelu w kontekście liczby zmiennych uwzględnionych w modelu.
+```
+
+-   MAE spada wraz ze wzrostem liczby zmiennych, osiągając stabilizację przy #Terms = 4.
+-   Dodanie większej liczby zmiennych (przy #Terms \> 4) nie poprawia dokładności modelu, co może oznaczać wystarczające dopasowanie już dla 4 Terms
+-   Wartość MAE spada wraz z pierwszymi dodanymi zmiennymi, co sugeruje, że kluczowe cechy danych są dobrze uchwycone przez model
+
+### 10.6 Model caret - glmboot
+
+```{r}
+mi8 <- caret::train(ITS~.,
+                               data=dane[,1:8],
+                               method = "glmboost",
+                               metric = 'MAE', 
+                               trControl = Control,
+                               na.action = na.omit,
+                               tuneLength = 15
+)
+
+mi8
+plot(mi8)
+plot(predict(mi8)~dane$ITS)
+```
+
+-   MAE sukcesywnie maleje wraz ze wzrostem liczby iteracji
+
+-   Wartość MAE stabilizuje się przy około 700 iteracjach na poziomie około 0.0047, co oznacza bardzo niski błąd predykcji
+
+-   Punkty są bardzo blisko linii prostej (diagonali), co wskazuje na bardzo dobre dopasowanie modelu
+
+-   Nie widać wyraźnych odstępstw, co sugeruje, że model dobrze odwzorowuje rzeczywiste dane
+
+## 11 Optymalizacja modelu dla chla
+
+### 11.1 Kombninacje zmiennych
+
+```{r}
+mi3_ch=regsubsets(chla~.,data=dane[,1:8],nbest=5)
+plot(mi3_ch,scale="r2")
+```
+
+-   Zmienne, takie jak namon, nas i ph pojawiają się w wielu modelach, co sugeruje ich istotny wpływ na zmienną chla.
+
+### 11.2 Drzewo decyzyjne
+
+```{r}
+mi4_ch <- rpart(chla~.,data=dane[,1:8], 
+                 na.action = na.rpart) 
+rpart.plot(mi4_ch, digits = 3)
+```
+
+-   nas to kluczowa zmienna decyzyjna. Jeśli nas \>= 103, wartość chla jest znacznie wyższa (średnia 37.7) w porównaniu z przypadkiem, gdy nas \< 103 (średnia 12.3).
+-   Zmienna chla jest wyższa dla większych wartości nas i ph
+-   Największa część próbek (62.7%) znajduje się w węźle z warunkiem nas \< 103 i ph \< 8.3.
+
+### 11.3 Model caret - rpart
+
+```{r}
+mi5_ch <- caret::train(chla~.,
+                       data=dane[,1:8],
+                       method = "rpart",
+                       metric = 'MAE', # RMSE
+                       trControl = Control_its,
+                       na.action = na.rpart,
+                       tuneLength = 15 
+)
+
+# Wyniki:
+mi5_ch
+plot(mi5_ch)
+```
+
+-   Dla wartości cp \> 0.3 zauważalny jest wzrost zarówno RMSE, jak i MAE
+-   Najlepsze wyniki model uzyskuje dla cp = 0.0000 do cp = 0.1326, gdzie błędy są najniższe, a dopasowanie (R²) najwyższe
+
+### Model 11.4 Model caret - bagEarth
+
+```{r}
+Control <- trainControl(method = "cv", number = 10, verboseIter = T)
+mi7_ch <- caret::train(chla~.,
+                              data=dane[1:8],
+                              method = "bagEarth",
+                              metric = 'MAE', 
+                              trControl = Control,
+                              na.action = na.omit,
+                              tuneLength = 15
+)
+plot(mi7_ch)
+```
+
+-   Dla większej liczby terminów (#Terms \> 6), MAE staje się mniej stabilne, co wskazuje na potencjalne nadmierne dopasowanie modelu
+-   Najlepszy model uzyskano dla około 6 terminów, gdzie MAE osiągnęło minimum
+
+### 11.5 Model caret - glmboost
+
+```{r}
+mi8_ch <- caret::train(chla~.,
+                               data=dane[,1:8],
+                               method = "glmboost",
+                               metric = 'MAE', 
+                               trControl = Control,
+                               na.action = na.omit,
+                               tuneLength = 15
+)
+
+mi8_ch
+plot(mi8_ch)
+plot(predict(mi8_ch)~dane$chla)
+```
+
+-   MAE rośnie wraz z wzrostem iteracji. Po osiągnięciu progu 200 wacha się w okolicach \~14.49
+
+-   Oznacza to, że zwiększanie liczby iteracji nie poprawia jakości modelu, a wręcz prowadzi nawet do pogorszenia MAE
+
+-   MAE sukcesywnie maleje wraz ze wzrostem liczby iteracji
+
+-   Wartość MAE stabilizuje się przy około 700 iteracjach na poziomie około 0.0047, co oznacza bardzo niski błąd predykcji
+
+-   Punkty są rozproszone wokół przekątnej, co wskazuje na pewne dopasowanie modelu, ale występują odstępstwa, zwłaszcza dla wyższych wartości chla.
+
+-   
+
+    ## 12. Macierz ITS
+
+### 12.1 Tworzenie kombinacji wag
+
+```{r}
+x <- c(0, 1)
+wynik <- expand.grid(rep(list(x), 8))
+
+mnoznik <- data.frame(wynik)
+
+print(mnoznik)
+```
+
+### 12.2 Wizualiacja modelu regresji
+
+```{r}
+# Tworzenie modelu regresji liniowej
+model_chla <- lm(nas ~ chla, data = dane)
+
+# Rysowanie wykresu
+plot(dane$chla, dane$nas, 
+     xlab = "chla", 
+     ylab = "wynik", 
+     main = "Wykres regresji: wynik ~ chla", 
+     pch = 19, col = "blue")
+
+# Dodanie linii regresji do wykresu
+abline(model_chla, col = "red", lwd = 2)
+
+# Wyświetlenie przewidywanych wartości (opcjonalne)
+predicted_values <- predict(model_chla)
+print(predicted_values)
+
+
+```
+
+### 12.3 Tworzenie macierzy
+
+```{r}
+i = 56
+model1 = lm(ITS~.,data = dane[,c(mnoznik[i,1]*1,
+                                 mnoznik[i,2]*2,
+                                 mnoznik[i,3]*3,
+                                 mnoznik[i,4]*4,
+                                 mnoznik[i,5]*5,
+                                 mnoznik[i,6]*6,
+                                 mnoznik[i,7]*7,8)])
+pre1 = as.data.frame(predict(model1))
+pre1
+plot(pre1)
+points(dane$ITS, col = "orange")
+
+```
+
+### 12.4 Tworzenie modeli dla różnych kombinacji wag
+
+```{r}
+# Przygotowanie pustej ramki danych na wyniki predykcji
+wyniki_predykcji <- data.frame(matrix(nrow = nrow(dane), ncol = 256))
+
+for (i in 1:256) {
+  # Dodanie modyfikowanych zmiennych z wagami mnoznik[i, ]
+  dane$modyfikacja <- mnoznik[i, 1] * dane$chla + 
+    mnoznik[i, 2] * dane$temp + 
+    mnoznik[i, 3] * dane$bar + 
+    mnoznik[i, 4] * dane$nas + 
+    mnoznik[i, 5] * dane$przew + 
+    mnoznik[i, 6] * dane$ph + 
+    mnoznik[i, 7] * dane$namon
+  
+  # Tworzenie modelu regresji
+  model <- lm(ITS ~ modyfikacja, data = dane)
+  
+  # Obliczanie predykcji dla wszystkich wierszy
+  predykcja <- predict(model, newdata = dane)
+  
+  # Dodanie wyników predykcji do odpowiedniej kolumny
+  wyniki_predykcji[, i] <- predykcja
+}
+
+
+
+# Dodanie nazw kolumn (np. Model_1, Model_2, ..., Model_256)
+colnames(wyniki_predykcji) <- paste0("Model_", 1:256)
+
+# Podgląd wyników
+head(wyniki_predykcji)
+```
+
+### 12.5 Tworzenie heatmapy
+
+```{r}
+# Konwersja wszystkich wartości w ramce danych na liczby (jeśli to możliwe)
+wyniki_predykcji[] <- lapply(wyniki_predykcji, as.numeric)
+
+# Ponownie konwertujemy na macierz
+wyniki_predykcji_matrix <- as.matrix(wyniki_predykcji)
+
+# Generowanie heatmap
+
+heatmap(wyniki_predykcji_matrix)
+wyniki_predykcji$numer = 1:51
+
+wlong=wyniki_predykcji %>%
+  pivot_longer(c(1:256))
+
+
+ggplot(data = wlong, aes(x = name, y = numer, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+  
+```
+
+## 13 Ocena dopasowania modeli hydrologicznych
+
+### 13.1 Obliczenie metryk dopasowania modelu
+
+```{r}
+# Obliczenie wartości przewidywanych
+predicted <- predict(model)
+
+# Rzeczywiste wartości
+observed <- dane$ITS
+
+# NSE (Nash-Sutcliffe Efficiency)
+nse_value <- NSE(predicted, observed)
+
+# RMSE
+rmse_value <- rmse(predicted, observed)
+
+# MAE
+mae_value <- mae(predicted, observed)
+
+# Wyświetlenie wyników
+cat("NSE:", nse_value, "\nRMSE:", rmse_value, "\nMAE:", mae_value)
+```
+
+**Wyniki metryk dopasowania modelu:** NSE (Nash-Sutcliffe Efficiency): 0.196978
+
+NSE w zakresie od 0 do 1 wskazuje na jakość dopasowania modelu do danych. Wartość 0.2 sugeruje, że model nie przewiduje dobrze zmiennej zależnej (ITS). Wynik jest niski, co oznacza, że model tylko minimalnie lepiej opisuje dane niż prosta średnia wartości rzeczywistych. RMSE (Root Mean Square Error): 0.3155636
+
+RMSE mierzy średnią różnicę między wartościami rzeczywistymi a przewidywanymi. Im niższa wartość, tym lepsze dopasowanie modelu. RMSE w tym przypadku wskazuje na umiarkowaną różnicę między wartościami przewidywanymi a rzeczywistymi. MAE (Mean Absolute Error): 0.2563924
+
+MAE mierzy przeciętny błąd bezwzględny między rzeczywistymi a przewidywanymi wartościami. Podobnie jak RMSE, im niższa wartość, tym lepsze dopasowanie. MAE pokazuje, że średni błąd w przewidywaniach wynosi około 0.26 jednostki.
+
+### 13.2 Analiza błędów modelu
+
+```{r}
+# Obliczenie reszt
+errors <- observed - predicted
+
+# Histogram błędów
+hist(errors, main = "Histogram błędów", xlab = "Błąd (Rzeczywiste - Przewidywane)", col = "lightblue", border = "black")
+
+# Taylor Diagram (jeśli korelacja i odchylenie standardowe są dostępne)
+taylor.diagram(observed, predicted)
+```
+
+**Histogram błędów:** Interpretacja: Histogram przedstawia rozkład błędów (reszt) modelu. Wnioski: Większość błędów jest bliska 0, co oznacza, że model generalnie dobrze dopasowuje dane. Istnieją pewne błędy w większych przedziałach (-0.4 do -0.6 i 0.6 do 0.8), co wskazuje na możliwe trudności modelu w przewidywaniu niektórych przypadków. **Taylor Diagram (prawy wykres):** Interpretacja: Taylor diagram umożliwia graficzną ocenę dopasowania modelu w oparciu o: Korelację (correlation): Jak dobrze przewidywania modelu są skorelowane z wartościami rzeczywistymi. Standardowe odchylenie (standard deviation): Zróżnicowanie danych w przewidywaniach i obserwacjach. RMSE (Root Mean Square Error): Błąd średniokwadratowy. Wnioski: Korelacja jest niska (około 0.2--0.3), co potwierdza słabe dopasowanie modelu. Standardowe odchylenie wskazuje na niedoskonałą reprezentację zmienności danych.
+
+**Ogólne wnioski:** Jakość modelu: Model regresji liniowej nie przewiduje zmiennej ITS wystarczająco dobrze. Wyniki NSE i korelacji są niskie, co sugeruje potrzebę poprawy modelu.
+
+Potencjalne działania:
+
+Rozważyć dodanie innych zmiennych objaśniających lub bardziej nieliniowych zależności (np. modele z interakcjami lub nieliniowe modele regresji). Sprawdzić, czy dane zawierają wartości odstające, które mogą wpływać na dopasowanie. Zastosować bardziej zaawansowane modele, takie jak random forest, SVM, czy regresję regularizowaną (Lasso/Ridge). Korzystanie z metryk: Metryki RMSE i MAE wskazują, że model umiarkowanie radzi sobie z przewidywaniem, ale nadal pozostawia miejsce na poprawę. Taylor Diagram potwierdza, że przewidywana zmienność jest mniejsza niż obserwowana.
+
+### 13.3 Eksploracja zmiennych przyczynowych- SEM
+
+```{r}
+model_sem <- 'ITS ~ chla + temp + nas
+              temp ~ nas'
+fit <- sem(model_sem, data = dane)
+summary(fit)
+```
+
+-   Statystyki dopasowania sugerują, że model dobrze pasuje do danych (wysokie p-value dla testu chi-kwadrat, brak dowodów na niedopasowanie)
+-   **nas:** silny i istotny wpływ na ITS (p \< 0.001), co sugeruje, że jest to kluczowa zmienna wyjaśniająca
+-   **chla:** Nieistotny wpływ na ITS (p = 0.183), może być mniej ważna w kontekście tego modelu
+
+### 13.4 Wykres ścieżek
+
+```{r}
+# Tworzenie wykresu ścieżek
+semPlot::semPaths(fit, 
+                 whatLabels = "std", # Wyświetlanie standardowych współczynników
+                 style = "lisrel", 
+                 layout = "tree", 
+                 edge.label.cex = 1.2,
+                 nCharNodes = 0, 
+                 sizeMan = 7, 
+                 sizeLat = 9,
+                 title = FALSE)
+
+```
+
+-   Zmienna nas ma największy wpływ na ITS (współczynnik 0.51), co potwierdza wcześniejsze analizy.
+-   Zmienna temp ma umiarkowany wpływ na ITS (0.21), ale także jest zależne od nas (0.20), co wskazuje na złożone zależności.
+-   Zmienna nas wpływa na ITS zarówno bezpośrednio (0.51), jak i pośrednio przez temp.
+
+### 14. Metody regularyzacji (Ridge i Lasso)
+
+```{r}
+x <- as.matrix(dane[, c("chla", "temp", "bar", "nas", "przew", "ph", "namon")])
+y <- dane$ITS
+model_lasso <- cv.glmnet(x, y, alpha = 1) # Lasso
+model_ridge <- cv.glmnet(x, y, alpha = 0) # Ridge
+
+# Wykres dla modelu Lasso
+plot(model_lasso)
+title("Wykres Lasso: Współczynniki vs. Lambda")
+
+# Wykres dla modelu Ridge
+plot(model_ridge)
+title("Wykres Ridge: Współczynniki vs. Lambda")
+
+# Alternatywnie, porównanie obu modeli na jednym wykresie
+par(mfrow = c(1,2)) # Ustawienie dwóch wykresów obok siebie
+
+plot(model_lasso, main = "Lasso")
+plot(model_ridge, main = "Ridge")
+
+par(mfrow = c(1,1)) # Resetowanie ustawienia wykresów
+```
+
+**Optymalne λ:**
+
+Na wykresach można zauważyć wartość λ, która minimalizuje MSE (najlepszy kompromis między prostotą modelu a jego dopasowaniem). Jest to wartość, przy której model jest najlepiej dopasowany bez przeuczenia.
+
+**Regularyzacja:** Ridge lepiej radzi sobie z dużą liczbą skorelowanych zmiennych, ponieważ zachowuje wszystkie cechy. Lasso eliminuje nieistotne zmienne, co upraszcza model.
+
+**Wybór metody:** W zależności od danych i celu analizy należy wybrać odpowiednią metodę: Lasso: Gdy kluczowe jest uproszczenie modelu. Ridge: Gdy każda zmienna wnosi istotną informację.
+
+### 15. Gam model
+
+```{r}
+gam_model <- gam(ITS ~ s(chla) + s(temp) + s(nas) + s(przew), data = dane)
+summary(gam_model)
+
+# Wizualizacja nieliniowych efektów
+plot(gam_model, pages = 1)
+```
+
+-   Model GAM ujawnił nieliniowe zależności między zmiennymi (chla, temp, nas, przew) a ITS, szczególnie zauważalne w wyższych zakresach wartości. Najsilniejszy wpływ na ITS mają zmienne chla i nas, podczas gdy temp i przew wykazują bardziej subtelne zależności. Model ten jest bardziej adekwatny do analizy złożonych, nieliniowych relacji niż modele liniowe. Zaleca się dalszą weryfikację modelu na nowych danych oraz rozważenie dodania dodatkowych zmiennych w celu poprawy dopasowania
+
+## 16. Inne wykresy
+
+### 16.1 Zależność między chlorofilem a ITS
+
+```{r}
+ggplot(dane, aes(x = chla, y = ITS, color = temp)) +
+  geom_point(size = 4, alpha = 0.8) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linetype = "dashed") +
+  scale_color_gradient(low = "blue", high = "red", name = "Temperatura") +
+  labs(title = "Zależność między Chlorofilem a ITS",
+       x = "Chlorofil",
+       y = "Indeks ITS") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "right")
+```
+
+-   Zależność między stężeniem chlorofilu-a a indeksem ITS wydaje się dodatnia (wyższe stężenie chlorofilu jest związane z wyższym ITS)
+
+### 16.2 Rozkład chlorofilu
+
+```{r}
+ggplot(dane, aes(x = chla)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 20, fill = "lightblue", color = "black", alpha = 0.7) +
+  geom_density(color = "blue", size = 1.2) +
+  labs(title = "Rozkład Chlorofilu",
+       x = "Chlorofil",
+       y = "Gęstość") +
+  theme_minimal(base_size = 14)
+
+```
+
+-   Większość wartości stężenia chlorofilu-a znajduje się w dolnym zakresie (0--25), co może wskazywać na tendencję do niskich stężeń w zbiorze danych
+
+-   Obserwuje się pojedyncze wartości w wyższych zakresach (np. powyżej 75), co może być wynikiem specyficznych warunków środowiskowych lub odchyleń
+
+### 16.3 Zależność między chlorofilem, ITS i przewodnością
+
+```{r}
+ggplot(dane, aes(x = chla, y = ITS, size = nas, color = ph)) +
+  geom_point(alpha = 0.8) +
+  scale_color_gradient(low = "green", high = "red", name = "pH") +
+  labs(title = "Zależność między Chlorofilem, ITS i przewodnością",
+       x = "Chlorofil (chla)",
+       y = "ITS",
+       size = "Przewodność (nas)") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "right")
+```
+
+-   Wykres punktowy wskazuje na zależność między chlorofilem-a a ITS, z przewodnością jako trzecią zmienną reprezentowaną przez wielkość punktów. Widać, że przy wyższym pH (oznaczonym ciepłymi kolorami) ITS jest wyższy, co może sugerować wpływ pH na ITS oraz korelację z koncentracją chlorofilu.
+
+### 16.4 Rozkład ITS w różnych kategoriach wody
+
+```{r}
+# Podział na kategorie jakości wody
+dane$quality <- cut(dane$chla, breaks = c(-Inf, 5, 15, Inf), labels = c("Good", "Moderate", "Poor"))
+
+ggplot(dane, aes(x = quality, y = ITS, fill = quality)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.2, alpha = 0.5) +
+  scale_fill_manual(values = c("Good" = "green", "Moderate" = "yellow", "Poor" = "red")) +
+  labs(title = "Rozkład ITS w różnych kategoriach jakości wody",
+       x = "Jakość wody",
+       y = "ITS") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none")
+```
+
+-   Wykres skrzypcowy ilustruje, że ITS jest najwyższy dla wody o słabej jakości, a najniższy dla wody o dobrej jakości. Woda o umiarkowanej jakości ma ITS pomiędzy tymi wartościami. Rozkład sugeruje, że jakość wody może być skorelowana z ITS
