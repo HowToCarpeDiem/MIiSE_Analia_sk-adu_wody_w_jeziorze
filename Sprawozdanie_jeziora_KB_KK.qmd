@@ -1,23 +1,23 @@
 ---
-title: "Projekt Jezioro"
+title: "Analiza składu jeziora"
 author: "Kamil Burza, Kornel Korbas"
 format:
   html:
     theme: cosmo
+    toc: true
+    self-contained: true
 editor: visual
 ---
 
 ## 1. Bibilioteki
 
-**Poniżej biblioteki z których korzystaliśmy, wraz z opisami:**
-
-```{r setup, include=FALSE}}
+```{r setup-libraries,echo=TRUE, warning=FALSE, message=FALSE}
 library(hrbrthemes) # Do ggplot2
 library(gtools)
 library(tidyverse)
 library(gridExtra)
 library(corrplot)
-library(forecast) # Do predykcji?
+library(forecast) # Do predykcji
 library(e1071) # Test kurtozy
 library(dgof) # Test Kołomogorowa
 library(combinat) # ?
@@ -47,7 +47,7 @@ library(randomForest)
 
 ### 2.1 Wczytanie danych i usunięcie pustych wierszy
 
-```{r setup, include=FALSE}}
+```{r setup, echo=TRUE, warning=FALSE, message=FALSE}
 dane2 <- read_csv("d.csv")
 dane <- na.omit(dane2)
 ```
@@ -178,7 +178,7 @@ acf(dane[,1:7], lag = 8)
 
 Wnioski te wskazują, że dane nie wykazują silnych cyklicznych wzorców ani trendów czasowych, co jest typowe dla krótkookresowych pomiarów bez wyraźnego wpływu sezonowości.
 
-### 4. Obliczanie ITS
+## 4. Obliczanie ITS
 
 ```{r}
 # ITS
@@ -224,7 +224,7 @@ wyniki_kurtoza
 
 ### 5.3 Test Kołmogorowa
 
-```{r}
+```{r,warning=FALSE}
 wyniki_kolmogorow <- data.frame(Column_Name = character(0), Kolo_p_value = numeric(0))
 for (i in 1:8) {
   column_name <- colnames(dane)[i]
@@ -382,19 +382,11 @@ lm_model
 
 **Wnioski:** Największy wpływ zmiennej pH Współczynnik dla zmiennej ph wynosi dokładnie 1.000, co sugeruje, że zmiana wartości pH o 1 jednostkę powoduje proporcjonalną zmianę wartości ITS o 1 jednostkę. Zmienna ta ma więc największy wpływ na wartość ITS w modelu.
 
-**Negatywny wpływ zmiennej nas** Zmienna nas ma ujemny współczynnik -0.013, co oznacza, że zwiększenie nas o 1 jednostkę prowadzi do spadku ITS o 0.013 jednostki, zgodnie z formułą definicji ITS, w której nas jest odejmowane.
+**Negatywny wpływ zmiennej nas:** Zmienna nas ma ujemny współczynnik -0.013, co oznacza, że zwiększenie nas o 1 jednostkę prowadzi do spadku ITS o 0.013 jednostki, zgodnie z formułą definicji ITS, w której nas jest odejmowane.
 
-**Minimalny wpływ innych zmiennych** Współczynniki dla pozostałych zmiennych (przew, namon, temp, bar) są bardzo bliskie zera i ich wpływ na zmienną zależną ITS można uznać za znikomy lub statystycznie nieistotny. Mogą one być niepotrzebne w modelu, jeśli analiza statystyczna potwierdzi brak istotności.
+**Minimalny wpływ innych zmiennych:** Współczynniki dla pozostałych zmiennych (przew, namon, temp, bar) są bardzo bliskie zera i ich wpływ na zmienną zależną ITS można uznać za znikomy lub statystycznie nieistotny. Mogą one być niepotrzebne w modelu, jeśli analiza statystyczna potwierdzi brak istotności.
 
-**Stała (intercept)** Wartość stałej wynosi 1.300, co oznacza, że gdy wszystkie zmienne niezależne mają wartość zero, ITS wynosi 1.300. Jednak fizyczna interpretacja tej wartości w kontekście rzeczywistych danych może być ograniczona, w zależności od zakresu zmiennych.
-
-### Co można dodać?
-
-Rekomendacje: Test istotności współczynników Konieczne jest przeprowadzenie testów istotności współczynników, aby ocenić, które z nich rzeczywiście wnoszą znaczącą informację do modelu.
-
-Ewentualne uproszczenie modelu Z uwagi na znikomy wpływ zmiennych przew, namon, temp i bar, można rozważyć ich usunięcie i zbudowanie prostszego modelu liniowego. Jednak decyzja ta wymaga weryfikacji na podstawie testów istotności i kryteriów dopasowania modelu (np. AIC, BIC).
-
-Sprawdzenie założeń modelu Przed dalszą interpretacją modelu należy sprawdzić, czy spełnia on założenia analizy regresji (normalność reszt, homoskedastyczność, brak współliniowości itp.).
+**Stała (intercept):** Wartość stałej wynosi 1.300, co oznacza, że gdy wszystkie zmienne niezależne mają wartość zero, ITS wynosi 1.300. Jednak fizyczna interpretacja tej wartości w kontekście rzeczywistych danych może być ograniczona, w zależności od zakresu zmiennych.
 
 ### 7.2 Statystyki modelu
 
@@ -402,7 +394,7 @@ Sprawdzenie założeń modelu Przed dalszą interpretacją modelu należy sprawd
 summary(lm_model)
 ```
 
-## 7.3 Wyniki testu współliniowości (VIF):\*\*
+### 7.3 Wyniki testu współliniowości (VIF):\*\*
 
 ```{r}
 vif(lm_model)
@@ -768,7 +760,7 @@ plot(predict(mi8_ch)~dane$chla)
 
 -   
 
-    ## 12. Macierz ITS
+## 12. Macierz ITS
 
 ### 12.1 Tworzenie kombinacji wag
 
@@ -778,33 +770,9 @@ wynik <- expand.grid(rep(list(x), 8))
 
 mnoznik <- data.frame(wynik)
 
-print(mnoznik)
 ```
 
-### 12.2 Wizualiacja modelu regresji
-
-```{r}
-# Tworzenie modelu regresji liniowej
-model_chla <- lm(nas ~ chla, data = dane)
-
-# Rysowanie wykresu
-plot(dane$chla, dane$nas, 
-     xlab = "chla", 
-     ylab = "wynik", 
-     main = "Wykres regresji: wynik ~ chla", 
-     pch = 19, col = "blue")
-
-# Dodanie linii regresji do wykresu
-abline(model_chla, col = "red", lwd = 2)
-
-# Wyświetlenie przewidywanych wartości (opcjonalne)
-predicted_values <- predict(model_chla)
-print(predicted_values)
-
-
-```
-
-### 12.3 Tworzenie macierzy
+### 12.2 Tworzenie macierzy
 
 ```{r}
 i = 56
@@ -822,7 +790,7 @@ points(dane$ITS, col = "orange")
 
 ```
 
-### 12.4 Tworzenie modeli dla różnych kombinacji wag
+### 12.3 Tworzenie modeli dla różnych kombinacji wag
 
 ```{r}
 # Przygotowanie pustej ramki danych na wyniki predykcji
@@ -857,7 +825,7 @@ colnames(wyniki_predykcji) <- paste0("Model_", 1:256)
 head(wyniki_predykcji)
 ```
 
-### 12.5 Tworzenie heatmapy
+### 12.4 Tworzenie heatmapy
 
 ```{r}
 # Konwersja wszystkich wartości w ramce danych na liczby (jeśli to możliwe)
@@ -970,7 +938,7 @@ semPlot::semPaths(fit,
 -   Zmienna temp ma umiarkowany wpływ na ITS (0.21), ale także jest zależne od nas (0.20), co wskazuje na złożone zależności.
 -   Zmienna nas wpływa na ITS zarówno bezpośrednio (0.51), jak i pośrednio przez temp.
 
-### 14. Metody regularyzacji (Ridge i Lasso)
+## 14. Metody regularyzacji (Ridge i Lasso)
 
 ```{r}
 x <- as.matrix(dane[, c("chla", "temp", "bar", "nas", "przew", "ph", "namon")])
@@ -1003,7 +971,7 @@ Na wykresach można zauważyć wartość λ, która minimalizuje MSE (najlepszy 
 
 **Wybór metody:** W zależności od danych i celu analizy należy wybrać odpowiednią metodę: Lasso: Gdy kluczowe jest uproszczenie modelu. Ridge: Gdy każda zmienna wnosi istotną informację.
 
-### 15. Gam model
+## 15. Gam model
 
 ```{r}
 gam_model <- gam(ITS ~ s(chla) + s(temp) + s(nas) + s(przew), data = dane)
